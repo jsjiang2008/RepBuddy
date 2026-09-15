@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Environment variables (if you ever add API keys/config)
+.env
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
