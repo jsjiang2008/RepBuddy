@@ -1,27 +1,56 @@
-# Virtual environment
+# Python virtual environments
 .venv/
 venv/
 env/
 
-# Python cache
+# Python caches and test output
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Distribution / packaging
+# Node / React dependencies and caches
+node_modules/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# Generated builds and packages (including frontend/dist)
 build/
 dist/
+dist-ssr/
 *.egg-info/
 
-# Environment variables (if you ever add API keys/config)
+# Local configuration and secrets; keep shareable examples
 .env
+.env.*
+*.local
+!.env.example
+!.env.sample
 
-# OS-specific
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Operating-system files
 .DS_Store
 Thumbs.db
 
-# Editor/IDE
+# Local editor / IDE files
 .vscode/
 .idea/
-*.swp
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
