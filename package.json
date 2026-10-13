@@ -1,0 +1,13 @@
+{
+  "name": "repbuddy",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "concurrently --kill-others --names tracker,frontend \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn backend.api:app --host 127.0.0.1 --port 8000",
+    "dev:frontend": "npm --prefix frontend run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

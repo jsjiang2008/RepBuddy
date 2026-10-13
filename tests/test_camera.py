@@ -56,7 +56,10 @@ class CameraTests(unittest.TestCase):
             wait_until(lambda: service.latest_frame()[1] is not None)
             service.command('start')
             self.assertEqual(len(opened), 1)
-            self.assertTrue(service.latest_frame()[1].startswith(b'\xff\xd8'))
+            _, jpeg = service.latest_frame()
+            if jpeg is None:
+                self.fail('Expected an encoded camera frame.')
+            self.assertTrue(jpeg.startswith(b'\xff\xd8'))
             service.command('pause')
             self.assertFalse(service.snapshot()['running'])
             self.assertEqual(service.snapshot()['cameraState'], 'ready')

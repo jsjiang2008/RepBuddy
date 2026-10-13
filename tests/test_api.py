@@ -1,4 +1,5 @@
 import unittest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -7,15 +8,16 @@ from backend.tracker import PushUpTracker
 
 
 class FakeService:
-    def __init__(self):
+    def __init__(self, frame: tuple[int, bytes | None] = (0, None)):
         self.tracker = PushUpTracker()
         self.commands = []
+        self.frame = frame
 
     def snapshot(self):
         return {**self.tracker.snapshot(), 'cameraState': 'off', 'error': None}
 
-    def latest_frame(self):
-        return 0, None
+    def latest_frame(self) -> tuple[int, bytes | None]:
+        return self.frame
 
     def command(self, command, goal=None):
         self.commands.append(command)
@@ -88,11 +90,14 @@ class ApiTests(unittest.TestCase):
 
 class VideoTests(unittest.IsolatedAsyncioTestCase):
     async def test_mjpeg_stream_frames_without_starting_camera(self):
-        service = FakeService()
         jpeg = b'\xff\xd8example-frame\xff\xd9'
-        service.latest_frame = lambda: (1, jpeg)
+        service = FakeService(frame=(1, jpeg))
         app = create_app(service)
-        endpoint = next(route.endpoint for route in app.routes if route.path == '/api/video')
+        endpoint = next(
+            route.endpoint
+            for route in app.routes
+            if isinstance(route, APIRoute) and route.path == '/api/video'
+        )
 
         class Request:
             async def is_disconnected(self):
