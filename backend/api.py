@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import json
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, StrictInt, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -12,31 +12,61 @@ from typing import Literal
 from anyio import CancelScope
 
 from .camera import CameraService
+from .history import HistoryRepository
 
 
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    command: Literal['start', 'pause', 'stop', 'reset', 'goal']
+    command: Literal['start', 'pause', 'stop', 'reset', 'goal', 'camera', 'retrySave']
     goal: StrictInt | None = None
+    cameraIndex: StrictInt | None = None
     requestId: StrictInt | None = None
 
 
-def create_app(service=None):
-    service = service if service is not None else CameraService()
+def create_app(service=None, history=None):
+    history = history if history is not None else HistoryRepository()
+    service = service if service is not None else CameraService(on_completed=history.save)
     clients = set()
     commands = asyncio.Lock()
 
     @asynccontextmanager
     async def lifespan(app):
-        yield
-        await asyncio.to_thread(service.command, 'stop')
+        try:
+            await asyncio.to_thread(history.initialize)
+        except Exception:
+            raise RuntimeError('Could not connect to PostgreSQL. Start your PostgreSQL server and check DATABASE_URL in .env.') from None
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(service.close)
 
     app = FastAPI(title='RepBuddy', lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.get('/api/health')
     async def health():
+        try:
+            await asyncio.to_thread(history.check)
+        except Exception:
+            raise HTTPException(503, 'PostgreSQL is unavailable.') from None
         return {'status': 'ok'}
+
+    @app.get('/api/cameras')
+    async def cameras(response: Response):
+        response.headers['Cache-Control'] = 'no-store'
+        try:
+            return await asyncio.to_thread(service.list_cameras)
+        except Exception:
+            raise HTTPException(503, 'Could not list webcams. Check the camera connection and try Refresh.') from None
+
+    @app.get('/api/history')
+    async def workouts(response: Response, limit: int = Query(20, ge=1, le=100),
+                       offset: int = Query(0, ge=0, le=1_000_000)):
+        response.headers['Cache-Control'] = 'no-store'
+        try:
+            return await asyncio.to_thread(history.list_workouts, limit, offset)
+        except Exception:
+            raise HTTPException(503, 'Workout history is unavailable. Check PostgreSQL and try again.') from None
 
     @app.get('/api/video')
     async def video(request: Request):
@@ -77,11 +107,18 @@ def create_app(service=None):
                     message = Command.model_validate(json.loads(raw))
                     request_id = message.requestId
                     async with commands:
-                        await asyncio.to_thread(service.command, message.command, message.goal)
+                        if message.command == 'camera':
+                            if message.cameraIndex is None:
+                                raise ValueError('Choose a webcam first.')
+                            await asyncio.to_thread(service.command, 'camera', camera_index=message.cameraIndex)
+                        else:
+                            await asyncio.to_thread(service.command, message.command, message.goal)
                     command_error = None
                 except (ValidationError, ValueError) as exc:
                     command_error = ('Invalid workout command.' if isinstance(exc, ValidationError)
                                      else str(exc))
+                except RuntimeError:
+                    command_error = 'Could not complete that command. Check the camera connection and try again.'
                 ack_id = request_id
 
         receiver = asyncio.create_task(receive_commands())

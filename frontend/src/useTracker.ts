@@ -1,42 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-
-type CameraState = 'off' | 'starting' | 'ready' | 'stopping'
-type Command = 'start' | 'pause' | 'stop' | 'reset' | 'goal'
-
-export type TrackerStatus = {
-  reps: number
-  goal: number
-  stage: 'up' | 'down' | null
-  running: boolean
-  completed: boolean
-  inPlank: boolean
-  hasPose: boolean
-  inGracePeriod: boolean
-  elapsedSeconds: number
-  cameraState: CameraState
-  error: string | null
-  commandError: string | null
-}
-
-const initialStatus: TrackerStatus = {
-  reps: 0, goal: 10, stage: null, running: false, completed: false,
-  inPlank: false, hasPose: false, inGracePeriod: false, elapsedSeconds: 0,
-  cameraState: 'off', error: null, commandError: null,
-}
-
-function isStatus(value: unknown): value is TrackerStatus & { type: 'status'; ackId: number | null } {
-  if (!value || typeof value !== 'object') return false
-  const data = value as Record<string, unknown>
-  return data.type === 'status'
-    && typeof data.reps === 'number' && Number.isInteger(data.reps) && data.reps >= 0
-    && typeof data.goal === 'number' && [5, 10, 15, 20].includes(data.goal)
-    && typeof data.elapsedSeconds === 'number' && Number.isFinite(data.elapsedSeconds) && data.elapsedSeconds >= 0
-    && [null, 'up', 'down'].includes(data.stage as string | null)
-    && ['off', 'starting', 'ready', 'stopping'].includes(data.cameraState as string)
-    && ['running', 'completed', 'inPlank', 'hasPose', 'inGracePeriod'].every((key) => typeof data[key] === 'boolean')
-    && ['error', 'commandError'].every((key) => data[key] === null || typeof data[key] === 'string')
-    && (data.ackId === null || (typeof data.ackId === 'number' && Number.isInteger(data.ackId)))
-}
+import { initialStatus, isStatus } from './trackerProtocol'
+import type { TrackerCommand } from './trackerProtocol'
 
 export function useTracker() {
   const [status, setStatus] = useState(initialStatus)
@@ -85,7 +49,7 @@ export function useTracker() {
         setConnected(false)
         setPending(false)
         pendingId.current = null
-        setStatus((previous) => ({ ...previous, running: false, cameraState: 'off' }))
+        setStatus((previous) => ({ ...previous, running: false, countdownSeconds: 0, cameraState: 'off' }))
         retry = window.setTimeout(connect, 1_500)
       }
     }
@@ -110,14 +74,14 @@ export function useTracker() {
     }
   }, [])
 
-  function sendCommand(command: Command, goal?: number) {
+  function sendCommand(command: TrackerCommand) {
     const socket = socketRef.current
     if (!connected || !socket || socket.readyState !== WebSocket.OPEN || pendingId.current !== null) return
     const requestId = ++nextRequestId.current
     pendingId.current = requestId
     pendingSince.current = performance.now()
     setPending(true)
-    socket.send(JSON.stringify({ command, goal, requestId }))
+    socket.send(JSON.stringify({ ...command, requestId }))
   }
 
   return { status, connected, pending, sendCommand, connectionError }

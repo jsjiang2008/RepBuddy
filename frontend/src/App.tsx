@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useTracker } from './useTracker'
+import { CameraPicker } from './CameraPicker'
+import { WorkoutHistory } from './WorkoutHistory'
 import type { CSSProperties } from 'react'
 import './App.css'
 
@@ -23,12 +25,15 @@ function App() {
   const { reps, completed } = session
   const elapsedMs = session.elapsedSeconds * 1_000
   const progress = Math.min(100, Math.round((reps / session.goal) * 100))
-  const busy = pending || session.cameraState === 'starting' || session.cameraState === 'stopping'
+  const countingDown = connected && session.countdownSeconds > 0
+  const busy = pending || (session.cameraState === 'starting' && !countingDown) || session.cameraState === 'stopping'
+  const savePending = session.historyState === 'saving' || session.historyState === 'error'
   const error = connectionError || session.commandError || session.error
   const phase = !connected ? 'Tracker offline'
     : error ? 'Tracking needs attention'
     : session.cameraState === 'starting' ? 'Opening camera…'
     : session.cameraState === 'stopping' ? 'Closing camera…'
+    : countingDown ? `Starting in ${session.countdownSeconds}…`
     : completed ? 'Set complete'
     : !session.running ? (elapsedMs > 0 ? 'Session paused' : 'Ready to begin')
     : session.inGracePeriod ? 'Holding your rep'
@@ -36,7 +41,8 @@ function App() {
     : !session.inPlank ? 'Get into plank'
     : session.stage === 'down' ? 'Down position' : 'Up position'
   const guidance = !connected ? 'Start the Python tracker. This screen reconnects automatically.'
-    : error || (completed ? 'Set complete. Start a new set when you’re ready.'
+    : error || (countingDown ? 'Get into position. Counting begins when the countdown ends.'
+    : completed ? (savePending ? 'Set complete. Save this set before starting another.' : 'Set complete. Start a new set when you’re ready.')
     : session.inGracePeriod ? 'Brief tracking loss. Your rep is held for up to half a second.'
     : session.running ? 'Face the camera and keep your arms and hips visible.'
     : 'Press Start to open your camera. Pause keeps the preview on; Stop releases it.')
@@ -68,18 +74,21 @@ function App() {
 
         <div className="connection-notice">
           <span className="notice-symbol" aria-hidden="true">i</span>
-          <p role="status"><strong>{connected ? 'On-device tracking.' : 'Waiting for the tracker.'}</strong> {connected ? 'Your camera is processed locally. Press Start when you’re ready.' : 'Start the Python server to connect your camera and counter.'}</p>
+          <p role="status"><strong>{connected ? 'On-device tracking.' : 'Waiting for the tracker.'}</strong> {connected ? 'Your camera is processed locally. You’ll have five seconds to get into position.' : 'Run the app to connect your camera and counter.'}</p>
         </div>
 
         <div className="workout-grid">
           <section className="preview-panel" aria-labelledby="preview-title">
             <div className="panel-heading"><h2 id="preview-title">Camera preview</h2><span className="muted-label">FRONT VIEW</span></div>
+            <CameraPicker connected={connected} selectedIndex={session.cameraIndex}
+              canChange={!pending && session.cameraState === 'off'}
+              onChange={(cameraIndex) => sendCommand({ command: 'camera', cameraIndex })} />
             <div className={`preview-stage ${session.running ? 'is-running' : ''}`}>
               <span className="preview-label"><span className="status-dot" /> {connected && session.cameraState === 'ready' ? 'LIVE CAMERA' : 'CAMERA OFF'}</span>
               <span className="preview-corner">01 / PUSH-UP</span>
               {connected && session.cameraState === 'ready' ? (
                 <>
-                  <img key={previewVersion} className="camera-feed" src={`/api/video?v=${previewVersion}`}
+                  <img key={`${session.cameraIndex}-${previewVersion}`} className="camera-feed" src={`/api/video?v=${session.cameraIndex}-${previewVersion}`}
                     alt="Live workout camera with pose landmarks"
                     onLoad={() => setPreviewFailed(false)} onError={() => setPreviewFailed(true)} />
                   {previewFailed && <div className="camera-placeholder" role="alert">
@@ -88,6 +97,11 @@ function App() {
                   </div>}
                 </>
               ) : <div className="camera-placeholder"><Mark /><h3>{phase}</h3><p>{guidance}</p></div>}
+              {countingDown && !previewFailed && <div className="countdown-overlay" role="status" aria-live="polite" aria-atomic="true">
+                <span className="countdown-label">GET INTO POSITION</span>
+                <strong>{session.countdownSeconds}</strong>
+                <span>Arms extended. Ready for your first rep.</span>
+              </div>}
               <div className="preview-caption"><span className="caption-line" /><span>Arms and hips in frame. Face the camera.</span></div>
             </div>
             <div className="tracking-strip">
@@ -96,7 +110,7 @@ function App() {
                 <p className="tracking-title" role="status">{phase}</p>
                 <p className="tracking-description">{guidance}</p>
               </div>
-              <span className="tracking-pill">{session.running ? 'TRACKING' : 'IDLE'}</span>
+              <span className="tracking-pill">{countingDown ? 'GET READY' : session.running ? 'TRACKING' : 'IDLE'}</span>
             </div>
           </section>
 
@@ -111,7 +125,7 @@ function App() {
             </div>
             <div className="goal-row">
               <label htmlFor="rep-goal">Rep goal</label>
-              <select id="rep-goal" value={session.goal} disabled={!connected || busy || session.running || elapsedMs > 0} onChange={(event) => sendCommand('goal', Number(event.target.value))}>
+              <select id="rep-goal" value={session.goal} disabled={!connected || busy || countingDown || session.running || elapsedMs > 0 || savePending} onChange={(event) => sendCommand({ command: 'goal', goal: Number(event.target.value) })}>
                 {[5, 10, 15, 20].map((goal) => <option key={goal} value={goal}>{goal} reps</option>)}
               </select>
             </div>
@@ -120,14 +134,20 @@ function App() {
               <div><span className="tiny-label">SET PROGRESS</span><strong>{progress}<span className="stat-unit">%</span></strong></div>
             </div>
             <div className="session-actions">
-              <button className="primary-button" disabled={!connected || busy} onClick={() => sendCommand(session.running ? 'pause' : 'start')}>
-                <span aria-hidden="true">{session.running ? 'Ⅱ' : '▶'}</span>
-                {busy ? 'Please wait…' : session.running ? 'Pause' : completed ? 'New set' : elapsedMs > 0 ? 'Resume' : 'Start'}
+              <button className="primary-button" disabled={!connected || busy || savePending} onClick={() => sendCommand({ command: session.running || countingDown ? 'pause' : 'start' })}>
+                <span aria-hidden="true">{countingDown ? '×' : session.running ? 'Ⅱ' : '▶'}</span>
+                {busy ? 'Please wait…' : countingDown ? 'Cancel countdown' : session.running ? 'Pause' : completed ? 'New set' : elapsedMs > 0 ? 'Resume' : 'Start'}
               </button>
-              <button className="reset-button" onClick={() => sendCommand('reset')} disabled={!connected || busy} aria-label="Reset session" title="Reset session">↺</button>
+              <button className="reset-button" onClick={() => sendCommand({ command: 'reset' })} disabled={!connected || busy || savePending} aria-label="Reset session" title="Reset session">↺</button>
             </div>
-            <button className="stop-button" disabled={!connected || pending || session.cameraState === 'off' || session.cameraState === 'stopping'} onClick={() => sendCommand('stop')}>Stop camera</button>
-            <p className="session-footnote">{elapsedMs > 0 ? 'Reset your set to change the rep goal.' : 'Set your goal. Then make your first move.'}</p>
+            <button className="stop-button" disabled={!connected || pending || session.cameraState === 'off' || session.cameraState === 'stopping'} onClick={() => sendCommand({ command: 'stop' })}>Stop camera</button>
+            {session.historyState && <div className={`save-notice ${session.historyState === 'error' ? 'save-error' : ''}`} role={session.historyState === 'error' ? 'alert' : 'status'}>
+              <p>{session.historyState === 'saving' ? 'Saving your completed set…'
+                : session.historyState === 'saved' ? '✓ Set saved to your history.'
+                : session.historyError || 'Your set could not be saved. Retry to keep it in your history.'}</p>
+              {session.historyState === 'error' && <button className="text-button" disabled={!connected || pending} onClick={() => sendCommand({ command: 'retrySave' })}>Retry saving set</button>}
+            </div>}
+            <p className="session-footnote">{countingDown ? 'The timer starts after the countdown.' : elapsedMs > 0 ? 'Reset your set to change the rep goal.' : 'Set your goal. Then make your first move.'}</p>
           </section>
         </div>
 
@@ -139,6 +159,8 @@ function App() {
             <li><span className="tip-number">03</span><div><h3>Move with control</h3><p>Start with arms extended. Lower, then push back up.</p></div></li>
           </ol>
         </section>
+
+        <WorkoutHistory connected={connected} version={session.historyVersion} />
       </main>
       <footer className="app-footer"><span><Mark small /> BUILT FOR YOUR NEXT REP.</span><span>RepBuddy · Local workout tracking</span></footer>
     </div>
