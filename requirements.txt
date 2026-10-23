@@ -1,8 +1,13 @@
+# Read webcam images and draw the tracking preview.
 opencv-contrib-python>=4.8,<4.12
+# Estimate body joints and perform the angle calculations.
 mediapipe==0.10.21
 numpy>=1.26,<2
+# Serve the local API and its live browser connections.
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
+# Connect to PostgreSQL and read local settings.
 psycopg[binary]>=3.2,<4
 python-dotenv>=1,<2
+# List camera names without opening their video streams.
 cv2-enumerate-cameras>=1.4,<2

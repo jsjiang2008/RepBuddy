@@ -1,4 +1,4 @@
-"""One camera worker per app; HTTP and WebSocket clients share its latest frame."""
+"""Read one camera in the background and share its latest preview with the app."""
 import logging
 import math
 import threading
@@ -9,12 +9,14 @@ from uuid import uuid4
 
 from .devices import list_video_devices, open_video_capture
 from .tracker import PushUpTracker
+from .workout import WorkoutPlan
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class _CompletedSet:
+    """Keep the finished result unchanged while the database saves it."""
     id: str
     completedAt: str
     reps: int
@@ -23,11 +25,14 @@ class _CompletedSet:
 
 
 class CameraService:
+    """Manage the camera, workout controls, countdown, and background saves."""
     def __init__(self, camera_index=0, capture_factory=None, processor_factory=None,
                  device_provider=None, clock=time.monotonic, countdown_seconds=5,
                  on_completed=None):
+        # Optional replacements let tests run without a real camera or clock.
         self.clock = clock
         self.tracker = PushUpTracker(clock=clock)
+        self.workout = WorkoutPlan()
         self.camera_index = camera_index
         self.capture_factory = capture_factory
         self.processor_factory = processor_factory
@@ -41,6 +46,7 @@ class CameraService:
         self.history_error = None
         self.history_version = 0
         self.history_thread = None
+        # Locks stop controls and camera updates from changing the same state at once.
         self.lock = threading.RLock()
         self.control_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -51,26 +57,32 @@ class CameraService:
         self.frame_id = 0
 
     def snapshot(self):
+        # Copy the current state into a message the frontend can display.
         with self.lock:
             countdown = (max(0, math.ceil(self.countdown_deadline - self.clock()))
                          if self.countdown_deadline is not None else 0)
-            return {**self.tracker.snapshot(), 'cameraState': self.camera_state,
+            tracker_status = self.tracker.snapshot()
+            return {**tracker_status, **self.workout.snapshot(self.clock(), tracker_status['elapsedSeconds']),
+                    'cameraState': self.camera_state,
                     'error': self.error, 'cameraIndex': self.camera_index,
                     'countdownSeconds': countdown, 'historyState': self.history_state,
                     'historyError': self.history_error,
                     'historyVersion': self.history_version}
 
     def latest_frame(self):
+        # The frame number tells the video stream whether the image changed.
         with self.lock:
             return self.frame_id, self.jpeg
 
     def list_cameras(self):
+        # Keep device discovery separate from a camera that may be opening or closing.
         with self.control_lock:
             cameras = self._available_cameras()
             with self.lock:
                 return {'cameras': cameras, 'selectedIndex': self.camera_index}
 
     def _available_cameras(self):
+        # Replace driver failures with a useful message for the user.
         try:
             return self.device_provider()
         except Exception:
@@ -78,23 +90,51 @@ class CameraService:
             raise RuntimeError('Could not list cameras. Reconnect your webcam and try again.') from None
 
     def _require_saved(self):
+        # Protect a completed set from being cleared before its save succeeds.
         if self.history_state == 'saving':
             raise ValueError('Wait for your completed set to finish saving.')
         if self.history_state == 'error':
             raise ValueError('Retry saving your completed set before starting or resetting.')
 
     def _clear_completed_set(self):
+        # Clear the saved result notice when a new set begins.
         self.completed_record = None
         self.history_state = None
         self.history_error = None
 
     def _cancel_countdown(self):
+        # Clear both a queued countdown and one that has already started.
         self.start_requested = False
         self.countdown_deadline = None
 
-    def command(self, command, goal=None, camera_index=None):
-        # Serialize commands, including disconnect/shutdown, without blocking
-        # frame/status reads while a camera driver is releasing its handle.
+    def _require_fresh_set(self):
+        # Calibration must not change the rules during an unfinished set.
+        self._require_saved()
+        if self.workout.state not in ('idle', 'complete'):
+            raise ValueError('Reset the workout before calibrating.')
+        if (self.tracker.running or self.start_requested or
+                self.countdown_deadline is not None):
+            raise ValueError('Pause the workout before calibrating.')
+        if (self.tracker.counter < self.tracker.goal and
+                (self.tracker.counter > 0 or self.tracker.elapsed > 0)):
+            raise ValueError('Reset the current set before calibrating.')
+
+    def _ensure_camera_worker(self):
+        """Open one background camera reader while the caller holds the state lock."""
+        if self.thread is not None and self.thread.is_alive():
+            if self.stop_event.is_set():
+                raise ValueError('The camera is stopping. Try again in a moment.')
+            return
+        self.error = None
+        self.jpeg = None
+        self.camera_state = 'starting'
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._run, daemon=True,
+                                       name='repbuddy-camera')
+        self.thread.start()
+
+    def command(self, command, goal=None, camera_index=None, *, sets=None, rest_seconds=None):
+        # Process one control at a time while still allowing live images and status updates.
         with self.control_lock:
             if command == 'camera':
                 if type(camera_index) is not int or camera_index < 0:
@@ -106,6 +146,8 @@ class CameraService:
                 if not any(camera['index'] == camera_index for camera in cameras):
                     raise ValueError('That camera is no longer available. Refresh the camera list.')
                 with self.lock:
+                    if self.camera_index != camera_index:
+                        self.tracker.clear_calibration()
                     self.camera_index = camera_index
                     self.error = None
                 return
@@ -120,12 +162,31 @@ class CameraService:
                     self.history_error = None
                 self._start_save(record)
                 return
+            if command in ('calibrate', 'cancelCalibration', 'clearCalibration'):
+                with self.lock:
+                    if command == 'cancelCalibration':
+                        self.tracker.cancel_calibration()
+                        return
+                    self._require_fresh_set()
+                    if command == 'clearCalibration':
+                        self.tracker.clear_calibration()
+                        return
+                    if self.thread is not None and self.thread.is_alive() and self.stop_event.is_set():
+                        raise ValueError('The camera is stopping. Try calibrating again in a moment.')
+                    if self.tracker.calibrating:
+                        return
+                    if self.tracker.counter >= self.tracker.goal:
+                        self.tracker.reset()
+                        self.workout.reset()
+                        self._clear_completed_set()
+                    self.tracker.begin_calibration()
+                    self._ensure_camera_worker()
+                return
             if command in ('stop', 'reset'):
                 if command == 'reset':
                     with self.lock:
                         self._require_saved()
-                        # Stop counting under the same lock as the save guard;
-                        # a final rep must not race between the check and stop.
+                        # Stop counting before another frame can complete a set.
                         self._cancel_countdown()
                         self.tracker.pause()
                         self.stop_event.set()
@@ -133,47 +194,59 @@ class CameraService:
                 if command == 'reset':
                     with self.lock:
                         self.tracker.reset()
+                        self.workout.reset()
                         self.error = None
                         self._clear_completed_set()
                 return
             with self.lock:
-                if command == 'goal':
+                if command == 'configureWorkout':
+                    self._require_saved()
+                    if (self.tracker.calibrating or self.camera_state in ('starting', 'stopping') or
+                            self.tracker.running or self.tracker.counter > 0 or self.tracker.elapsed > 0):
+                        raise ValueError('Reset the workout before changing its settings.')
+                    self.workout.configure(sets, rest_seconds)
+                elif command == 'skipRest':
+                    self._require_saved()
+                    self.workout.skip_rest(self.clock())
+                elif command == 'goal':
+                    if self.workout.state != 'idle':
+                        raise ValueError('Reset the workout before changing its goal.')
                     if (self.camera_state == 'starting' or self.start_requested or
-                            self.countdown_deadline is not None):
+                            self.countdown_deadline is not None or self.tracker.calibrating):
                         raise ValueError('Pause or reset the set before changing its goal.')
                     self.tracker.set_goal(goal)
                 elif command == 'pause':
+                    self.workout.pause(self.clock())
                     self._cancel_countdown()
+                    self.tracker.cancel_calibration()
                     self.tracker.pause()
                     if self.camera_state == 'starting':
                         self.stop_event.set()
                 elif command == 'start':
                     self._require_saved()
+                    if self.tracker.calibrating:
+                        raise ValueError('Finish or cancel calibration before starting the set.')
                     if self.thread is not None and self.thread.is_alive():
                         if self.stop_event.is_set():
                             raise ValueError('The camera is stopping. Try Start again in a moment.')
                         if (self.tracker.running or self.start_requested or
                                 self.countdown_deadline is not None):
                             return
-                    if self.tracker.counter >= self.tracker.goal:
+                    if self.workout.state == 'complete':
                         self.tracker.reset()
                         self._clear_completed_set()
-                    self.start_requested = True
-                    if self.thread is not None and self.thread.is_alive():
-                        return  # The next valid preview frame starts the countdown.
-                    self.error = None
-                    self.jpeg = None
-                    self.camera_state = 'starting'
-                    self.stop_event.clear()
-                    self.thread = threading.Thread(target=self._run, daemon=True,
-                                                   name='repbuddy-camera')
-                    self.thread.start()
+                    self.workout.start(self.clock())
+                    self.start_requested = self.workout.state == 'active'
+                    self._ensure_camera_worker()
                 else:
                     raise ValueError('Unknown workout command.')
 
     def _stop(self):
+        # Ask the reader to exit, then wait briefly for it to release the camera.
         with self.lock:
+            self.workout.pause(self.clock())
             self._cancel_countdown()
+            self.tracker.cancel_calibration()
             self.tracker.pause()
             self.stop_event.set()
             thread = self.thread
@@ -184,11 +257,10 @@ class CameraService:
         with self.lock:
             if not thread or not thread.is_alive():
                 self.camera_state = 'off'
-            self.tracker.in_plank = False
-            self.tracker.has_pose = False
+            self.tracker.update(float('nan'), float('nan'), False, False)
 
     def close(self):
-        """Release the webcam and give an in-flight history write time to finish."""
+        """Release the webcam and allow a pending database save to finish."""
         with self.control_lock:
             self._stop()
             history_thread = self.history_thread
@@ -198,7 +270,7 @@ class CameraService:
     def _run(self):
         capture = processor = None
         try:
-            # Heavy libraries and hardware are initialized only after Start.
+            # Load camera libraries only when a preview is requested.
             import cv2
             factory = self.capture_factory or open_video_capture
             capture = factory(self.camera_index)
@@ -212,6 +284,7 @@ class CameraService:
             else:
                 processor = self.processor_factory()
             while not self.stop_event.is_set():
+                # Analyze the image and compress it for the browser preview.
                 success, frame = capture.read()
                 if not success:
                     raise RuntimeError('The webcam stopped sending frames. Check the camera and try Start again.')
@@ -224,7 +297,13 @@ class CameraService:
                     if self.stop_event.is_set():
                         break
                     self.camera_state = 'ready'
+                    # Rest ends only while the camera is ready and the last set is saved.
+                    if self.workout.next_set(self.clock(), self.history_state not in ('saving', 'error')):
+                        self.tracker.reset()
+                        self._clear_completed_set()
+                        self.start_requested = True
                     if self.start_requested:
+                        # Start the countdown only after the first usable preview frame.
                         self.countdown_deadline = self.clock() + self.countdown_seconds
                         self.start_requested = False
                     if (self.countdown_deadline is not None and
@@ -232,11 +311,18 @@ class CameraService:
                         self.countdown_deadline = None
                         self.tracker.start()
                     was_completed = self.tracker.counter >= self.tracker.goal
-                    self.tracker.update(left, right, in_plank, has_pose)
+                    # Pass uncertainty reasons along with angles so the counter can pause safely.
+                    assessment = getattr(processor, 'assessment', None)
+                    self.tracker.update(left, right, in_plank, has_pose,
+                                        quality=assessment.quality if assessment is not None else None,
+                                        reason=assessment.reason if assessment is not None else None)
                     self.jpeg = encoded.tobytes()
                     self.frame_id += 1
+                    if not was_completed and self.tracker.counter >= self.tracker.goal:
+                        self.workout.finish_set(self.tracker.snapshot()['elapsedSeconds'], self.clock())
                     if (not was_completed and self.tracker.counter >= self.tracker.goal
                             and self.on_completed is not None):
+                        # Capture one result when the goal is first reached.
                         record_to_save = _CompletedSet(
                             id=str(uuid4()),
                             completedAt=datetime.now(timezone.utc).isoformat(),
@@ -254,6 +340,7 @@ class CameraService:
             with self.lock:
                 self.error = str(exc) or 'Camera tracking failed. Try starting again.'
         finally:
+            # Always release the camera and pose model, even after a driver error.
             try:
                 if capture is not None:
                     capture.release()
@@ -263,16 +350,16 @@ class CameraService:
                         processor.close()
                 finally:
                     with self.lock:
+                        self.workout.pause(self.clock())
                         self._cancel_countdown()
+                        self.tracker.cancel_calibration()
                         self.tracker.pause()
-                        self.tracker.in_plank = False
-                        self.tracker.has_pose = False
+                        self.tracker.update(float('nan'), float('nan'), False, False)
                         self.camera_state = 'off'
                         self.jpeg = None
 
     def _start_save(self, record):
-        # A separate worker keeps preview responsive and lets retries run even
-        # after the webcam has been stopped. Only one save may be in flight.
+        # Save in a separate thread so preview updates continue. Allow one save at a time.
         self.history_thread = threading.Thread(
             target=self._save_record, args=(record,), name='repbuddy-history',
             daemon=False,

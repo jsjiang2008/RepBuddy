@@ -3,6 +3,35 @@
 Updates to RepBuddy, with the newest changes first. Future tasks are listed at
 the bottom. Dates for earlier updates come from the Git history.
 
+## 2026-10-23 — Windows desktop installer
+
+- Added an Electron desktop shell and Windows installer with the Python tracker,
+  pose model, and a private PostgreSQL database included.
+- Added first launch setup, a loading screen, local request authentication, and
+  automatic tracker and database shutdown when the app closes.
+- Added packaging instructions and a check that starts the packaged app with
+  temporary history and verifies the interface, model, connection, and shutdown.
+- Reorganized the README around installing and using the desktop app. Added
+  first launch and shutdown steps, camera setup, workout controls, history
+  backups, and troubleshooting. Kept source setup and installer builds in the
+  development section.
+- Added workout plans with 1 to 10 sets, a rep goal per set, and rest times
+  from no rest to five minutes. Each set starts after rest and a countdown.
+- Added pause, resume, and skip controls for rest, plus set progress and total
+  active time. Each completed set saves separately before the next one starts.
+- Added tests for automatic set changes, paused rest, zero rest, and save failures.
+- Added a short confirmation time for the top and bottom of each rep, with
+  a small margin for angle jitter. A single frame can no longer change stages.
+- Added specific tracking feedback for hidden joints and posture checks.
+  Brief uncertainty keeps the existing grace period, while clearly incorrect
+  posture clears the unfinished rep.
+- Added optional calibration using a practice push-up. It adjusts each arm's
+  angle limits without counting a rep or starting the workout timer.
+- Added a local video and landmark replay tool, synthetic regression cases,
+  and a guide for measuring missed and extra reps with manually labelled clips.
+- Added brief comments throughout the Python and frontend code, tests, and
+  settings. Comment explanations use simple language, periods, and commas.
+
 ## 2026-10-14 — Small improvements, no more Docker
 
 - Made Docker optional. `npm run dev` uses the configured PostgreSQL server;
@@ -78,6 +107,8 @@ Suggested order for the next updates. Completed tasks are checked off below.
   camera heights, and brief tracking loss. Compare the actual reps with the
   counter, record missed and extra reps, and use those results to tune the
   tracker. Save example landmark sequences as regression tests.
+- [x] **Add replay tools.** Replay local recordings and saved landmarks using
+  the real tracker, with synthetic examples for counting regressions.
 - [x] **Investigate the stalled API test.** The restricted test environment
   blocked Python's event-loop socket setup. API tests pass outside that
   environment, including camera cleanup on disconnect.
@@ -88,7 +119,7 @@ Suggested order for the next updates. Completed tasks are checked off below.
 
 ### Next: improve the workout experience
 
-- [ ] **Explain why a rep didn't count.** Show specific feedback when arms or
+- [x] **Explain why a rep didn't count.** Show specific feedback when arms or
   hips aren't visible, the torso check fails, or the movement doesn't reach
   the required elbow angles. Base each message on what the tracker can
   actually detect.
@@ -104,12 +135,16 @@ Suggested order for the next updates. Completed tasks are checked off below.
 
 ### Then: package it and show it working
 
-- [ ] **Create a desktop installer.** Use
-  [Electron](https://www.electronjs.org/docs/latest/tutorial/application-distribution)
-  for the React interface and bundle the Python tracker and its dependencies.
-  Include local PostgreSQL setup and persistent data storage in the install
-  process. Launch and stop the backend with the app, then test the installer
-  on a Windows machine without Python, Node.js, or PostgreSQL preinstalled.
+- [x] **Create a desktop installer.** Built a Windows x64 installer with Electron,
+  the Python tracker, pose model, and PostgreSQL. The app handles database setup,
+  keeps saved history between launches, and stops its backend when closed.
+- [ ] **Test installation on a clean Windows computer.** Check installation,
+  camera access, a full workout, saved history after restarting, and uninstalling
+  without Python, Node.js, or PostgreSQL already installed. The packaged app check
+  passes locally, but it doesn't cover installing on another computer.
+- [ ] **Sign and publish the installer.** Add Windows code signing and upload
+  the installer and checksum to a GitHub Release. Add a download link to the README
+  once the release is available.
 - [ ] **Add a project demo.** Include screenshots, a short video of a full
   workout, and an architecture diagram in the README. Add measured tracking
   results and describe the test setup so the numbers have context.

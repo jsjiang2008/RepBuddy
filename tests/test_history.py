@@ -1,7 +1,6 @@
-"""Database integration tests require an explicit TEST_DATABASE_URL.
+"""Test real PostgreSQL using a separate test database.
 
-Every integration run creates a unique schema and only removes that schema.
-No SQLite substitute or existing workout data is used.
+Each run creates and removes its own temporary tables. Existing workouts are untouched.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -18,6 +17,7 @@ from backend.history import HistoryRepository
 
 
 def completed_set(**changes):
+    # Create a valid sample workout that each test can adjust.
     record = {
         'id': str(uuid4()),
         'completedAt': '2026-10-14T12:00:00Z',
@@ -29,10 +29,12 @@ def completed_set(**changes):
 
 
 class HistoryValidationTests(unittest.TestCase):
+    # Reject bad workout data before it reaches a database.
     def setUp(self):
         self.repository = HistoryRepository('postgresql://unused.invalid/unused')
 
     def test_invalid_records_are_rejected_before_connecting(self):
+        # Reject broken identifiers, goals, durations, and dates without connecting.
         invalid = [
             {'id': 'bad-id'}, {'goal': 11}, {'goal': True}, {'reps': 9},
             {'reps': True}, {'durationSeconds': -1}, {'durationSeconds': True},
@@ -41,14 +43,15 @@ class HistoryValidationTests(unittest.TestCase):
             {'completedAt': '2026-10-14T12:00:00'},
             {'completedAt': datetime(2026, 10, 14)},
         ]
-        with patch('backend.history.psycopg.connect') as connect:
+        with patch('backend.history.psycopg.Connection.connect') as connect:
             for changes in invalid:
                 with self.subTest(changes=changes), self.assertRaises(ValueError):
                     self.repository.save(completed_set(**changes))
             connect.assert_not_called()
 
     def test_pagination_is_bounded_before_connecting(self):
-        with patch('backend.history.psycopg.connect') as connect:
+        # Reject invalid page sizes and offsets without connecting.
+        with patch('backend.history.psycopg.Connection.connect') as connect:
             for limit, offset in [(0, 0), (101, 0), (True, 0), (20, -1), (20, True)]:
                 with self.subTest(limit=limit, offset=offset), self.assertRaises(ValueError):
                     self.repository.list_workouts(limit, offset)
@@ -58,7 +61,9 @@ class HistoryValidationTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'), 'Set TEST_DATABASE_URL to run PostgreSQL integration tests.')
 class HistoryIntegrationTests(unittest.TestCase):
     @classmethod
+    # Test real PostgreSQL using temporary tables separate from saved workouts.
     def setUpClass(cls):
+        # Create a private test area and prepare its workout table.
         cls.base_url = os.environ['TEST_DATABASE_URL']
         cls.schema = f'repbuddy_test_{uuid4().hex}'
         with psycopg.connect(cls.base_url, connect_timeout=5) as connection:
@@ -84,6 +89,7 @@ class HistoryIntegrationTests(unittest.TestCase):
             connection.execute('TRUNCATE workouts')
 
     def test_migrations_are_repeatable_and_safe_during_concurrent_startup(self):
+        # Check that simultaneous startups apply the same database changes only once.
         with ThreadPoolExecutor(max_workers=4) as workers:
             list(workers.map(lambda _: HistoryRepository(self.database_url).initialize(), range(4)))
         with psycopg.connect(self.database_url, connect_timeout=5) as connection:
@@ -91,6 +97,7 @@ class HistoryIntegrationTests(unittest.TestCase):
         self.assertTrue(self.repository.check())
 
     def test_saved_set_survives_repository_restart_and_duplicate_save(self):
+        # Check that history persists and saving the same result twice creates one row.
         record = completed_set(completedAt='2026-10-14T08:00:00-04:00')
         self.assertTrue(self.repository.save(record))
         restarted = HistoryRepository(self.database_url)
@@ -100,6 +107,7 @@ class HistoryIntegrationTests(unittest.TestCase):
         self.assertEqual(result['workouts'], [{**record, 'completedAt': '2026-10-14T12:00:00Z'}])
 
     def test_camera_completion_is_saved_and_visible_after_app_restart(self):
+        # Follow a completed set from the camera worker into history after an app restart.
         import time
         import numpy as np
         from fastapi.testclient import TestClient
@@ -125,7 +133,8 @@ class HistoryIntegrationTests(unittest.TestCase):
             frame_number = 0
 
             def process(self, frame):
-                angle = (170, 70, 170)[self.frame_number % 3]
+                # Hold each position long enough for the real counter to confirm it.
+                angle = 170 if (self.frame_number // 20) % 2 == 0 else 70
                 self.frame_number += 1
                 return frame, angle, angle, True, True
 
@@ -156,6 +165,7 @@ class HistoryIntegrationTests(unittest.TestCase):
                 self.assertEqual(client.get('/api/history').json(), saved)
 
     def test_simultaneous_retries_save_one_row(self):
+        # Check that competing save retries cannot create duplicate sets.
         record = completed_set()
         with ThreadPoolExecutor(max_workers=4) as workers:
             inserted = list(workers.map(lambda _: self.repository.save(record), range(4)))
@@ -163,6 +173,7 @@ class HistoryIntegrationTests(unittest.TestCase):
         self.assertEqual(self.repository.list_workouts()['total'], 1)
 
     def test_weekly_summary_is_utc_and_independent_of_pagination(self):
+        # Check weekly date boundaries and totals across all history pages.
         records = [
             completed_set(completedAt='2026-10-11T23:59:59Z', reps=20, goal=20),
             completed_set(completedAt='2026-10-12T00:00:00Z', reps=5, goal=5),
@@ -173,7 +184,7 @@ class HistoryIntegrationTests(unittest.TestCase):
             self.repository.save(record)
         with patch('backend.history.datetime', wraps=datetime) as clock:
             clock.now.return_value = datetime(2026, 10, 14, tzinfo=timezone.utc)
-            # list_workouts only uses datetime.now, so the replacement doesn't affect validation.
+            # Replace only the current date so record validation stays unchanged.
             page = self.repository.list_workouts(limit=1, offset=1)
             empty_page = self.repository.list_workouts(limit=1, offset=99)
         self.assertEqual(page['workouts'][0]['id'], records[2]['id'])
@@ -183,6 +194,7 @@ class HistoryIntegrationTests(unittest.TestCase):
         self.assertEqual(empty_page['summary'], page['summary'])
 
     def test_equal_timestamps_have_stable_order(self):
+        # Use the unique identifier to keep equal dates in a predictable order.
         records = [completed_set(id=f'00000000-0000-0000-0000-{number:012d}') for number in (1, 3, 2)]
         for record in records:
             self.repository.save(record)
@@ -192,6 +204,7 @@ class HistoryIntegrationTests(unittest.TestCase):
         )
 
     def test_empty_history_has_zero_summary(self):
+        # Check that an unused database returns no sets and zero totals.
         result = self.repository.list_workouts()
         self.assertEqual(result, {
             'workouts': [], 'total': 0,

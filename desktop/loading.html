@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepBuddy</title>
+  <style>
+    /* Give first launch a visible screen while the private database is prepared. */
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111512; color: #f2f7ed; font-family: system-ui, sans-serif; }
+    main { max-width: 420px; padding: 32px; text-align: center; }
+    h1 { font-size: 42px; letter-spacing: -2px; margin: 0 0 24px; }
+    h1 span { color: #c1f17e; }
+    p { color: #aeb9a8; line-height: 1.7; font-size: 14px; }
+    .bar { height: 4px; margin: 32px auto; width: 160px; background: #35402e; border-radius: 4px; overflow: hidden; }
+    .bar span { display: block; width: 60px; height: 100%; background: #c1f17e; animation: loading 1.2s infinite alternate ease-in-out; }
+    @keyframes loading { to { transform: translateX(100px); } }
+    @media (prefers-reduced-motion: reduce) { .bar span { animation: none; width: 100%; } }
+  </style>
+</head>
+<body><main><h1>repbuddy<span>.</span></h1><p>Getting your workout ready.</p><div class="bar" aria-hidden="true"><span></span></div><p>The first launch may take a little longer while we set up your workout history.</p></main></body>
+</html>

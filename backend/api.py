@@ -1,4 +1,4 @@
-"""Local API. Run with: python -m uvicorn backend.api:app --host 127.0.0.1"""
+"""Connect the workout screen to the Python tracker on this computer."""
 import asyncio
 from contextlib import asynccontextmanager
 import json
@@ -16,14 +16,19 @@ from .history import HistoryRepository
 
 
 class Command(BaseModel):
+    # Accept only known controls and reject extra or wrongly typed fields.
     model_config = ConfigDict(extra='forbid')
-    command: Literal['start', 'pause', 'stop', 'reset', 'goal', 'camera', 'retrySave']
+    command: Literal['start', 'pause', 'stop', 'reset', 'goal', 'camera', 'retrySave',
+                     'calibrate', 'cancelCalibration', 'clearCalibration', 'configureWorkout', 'skipRest']
     goal: StrictInt | None = None
     cameraIndex: StrictInt | None = None
+    sets: StrictInt | None = None
+    restSeconds: StrictInt | None = None
     requestId: StrictInt | None = None
 
 
 def create_app(service=None, history=None):
+    # Tests can pass fake services. Normal startup uses the camera and database.
     history = history if history is not None else HistoryRepository()
     service = service if service is not None else CameraService(on_completed=history.save)
     clients = set()
@@ -31,6 +36,7 @@ def create_app(service=None, history=None):
 
     @asynccontextmanager
     async def lifespan(app):
+        # Prepare saved history before accepting requests and release the camera on exit.
         try:
             await asyncio.to_thread(history.initialize)
         except Exception:
@@ -41,10 +47,12 @@ def create_app(service=None, history=None):
             await asyncio.to_thread(service.close)
 
     app = FastAPI(title='RepBuddy', lifespan=lifespan)
+    # Only local host names may send requests to this server.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.get('/api/health')
     async def health():
+        # Check that the server can still reach its workout database.
         try:
             await asyncio.to_thread(history.check)
         except Exception:
@@ -53,6 +61,7 @@ def create_app(service=None, history=None):
 
     @app.get('/api/cameras')
     async def cameras(response: Response):
+        # Return fresh camera names without opening any camera.
         response.headers['Cache-Control'] = 'no-store'
         try:
             return await asyncio.to_thread(service.list_cameras)
@@ -62,6 +71,7 @@ def create_app(service=None, history=None):
     @app.get('/api/history')
     async def workouts(response: Response, limit: int = Query(20, ge=1, le=100),
                        offset: int = Query(0, ge=0, le=1_000_000)):
+        # Load one page of saved sets and totals for the history panel.
         response.headers['Cache-Control'] = 'no-store'
         try:
             return await asyncio.to_thread(history.list_workouts, limit, offset)
@@ -71,6 +81,7 @@ def create_app(service=None, history=None):
     @app.get('/api/video')
     async def video(request: Request):
         async def frames():
+            # Send each new preview image once until the browser disconnects.
             last_id = -1
             while not await request.is_disconnected():
                 frame_id, jpeg = service.latest_frame()
@@ -84,6 +95,7 @@ def create_app(service=None, history=None):
 
     @app.websocket('/api/ws')
     async def websocket(ws: WebSocket):
+        # Keep one connection open for controls and live tracking updates.
         # Other websites must not be able to start the local webcam.
         origin = ws.headers.get('origin')
         if origin:
@@ -97,6 +109,7 @@ def create_app(service=None, history=None):
         ack_id = None
 
         async def receive_commands():
+            # Process one control at a time and remember which request was handled.
             nonlocal command_error, ack_id
             while True:
                 raw = await ws.receive_text()
@@ -111,6 +124,9 @@ def create_app(service=None, history=None):
                             if message.cameraIndex is None:
                                 raise ValueError('Choose a webcam first.')
                             await asyncio.to_thread(service.command, 'camera', camera_index=message.cameraIndex)
+                        elif message.command == 'configureWorkout':
+                            await asyncio.to_thread(service.command, message.command,
+                                                    sets=message.sets, rest_seconds=message.restSeconds)
                         else:
                             await asyncio.to_thread(service.command, message.command, message.goal)
                     command_error = None
@@ -122,6 +138,7 @@ def create_app(service=None, history=None):
                 ack_id = request_id
 
         receiver = asyncio.create_task(receive_commands())
+        # Read controls and send updates at the same time without blocking video.
         try:
             while not receiver.done():
                 await ws.send_json({'type': 'status', **service.snapshot(),
@@ -132,7 +149,7 @@ def create_app(service=None, history=None):
             pass
         finally:
             clients.discard(ws)
-            # Disconnect may cancel this handler; still release its resources.
+            # Finish cleanup even if the browser closes in the middle of a request.
             with CancelScope(shield=True):
                 receiver.cancel()
                 await asyncio.gather(receiver, return_exceptions=True)

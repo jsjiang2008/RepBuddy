@@ -11,6 +11,7 @@ from backend.history import DEFAULT_DATABASE_URL
 
 class PrepareDevTests(unittest.TestCase):
     def setUp(self):
+        # Replace Docker and database actions so startup tests do not run real services.
         self.output = StringIO()
         self.enterContext(redirect_stdout(self.output))
         self.repository = self.enterContext(patch.object(prepare_dev, 'HistoryRepository'))
@@ -21,6 +22,7 @@ class PrepareDevTests(unittest.TestCase):
         self.migrate = self.enterContext(patch.object(prepare_dev, 'migrate', return_value=0))
 
     def test_default_startup_only_prepares_configured_postgresql(self):
+        # Check that normal startup never tries to find or launch Docker.
         self.assertEqual(prepare_dev.main([]), 0)
         self.migrate.assert_called_once_with()
         self.repository.assert_not_called()
@@ -28,12 +30,14 @@ class PrepareDevTests(unittest.TestCase):
         self.run.assert_not_called()
 
     def test_default_startup_propagates_database_failure_without_trying_docker(self):
+        # Stop on a database error instead of silently choosing another database.
         self.migrate.return_value = 1
         self.assertEqual(prepare_dev.main([]), 1)
         self.which.assert_not_called()
         self.run.assert_not_called()
 
     def test_explicit_docker_startup_prepares_database_after_compose(self):
+        # Check that the requested container starts before database preparation.
         events = []
         self.run.side_effect = lambda *args, **kwargs: events.append('compose') or self.run.return_value
         self.migrate.side_effect = lambda: events.append('migrate') or 0
@@ -45,6 +49,7 @@ class PrepareDevTests(unittest.TestCase):
         self.assertEqual(events, ['compose', 'migrate'])
 
     def test_docker_mode_rejects_a_different_database(self):
+        # Avoid starting one database while the app is configured to use another.
         self.repository.return_value.database_url = 'postgresql://private-password@localhost/native'
         self.assertEqual(prepare_dev.main(['--docker']), 1)
         self.which.assert_not_called()
@@ -54,22 +59,26 @@ class PrepareDevTests(unittest.TestCase):
         self.assertNotIn('private-password', self.output.getvalue())
 
     def test_missing_docker_skips_migrations(self):
+        # Stop clearly when Docker was requested but is not installed.
         self.which.return_value = None
         self.assertEqual(prepare_dev.main(['--docker']), 1)
         self.run.assert_not_called()
         self.migrate.assert_not_called()
 
     def test_failed_compose_skips_migrations(self):
+        # Skip database changes when the requested container fails to start.
         self.run.return_value.returncode = 1
         self.assertEqual(prepare_dev.main(['--docker']), 1)
         self.migrate.assert_not_called()
 
     def test_docker_launch_error_skips_migrations(self):
+        # Handle an operating system error while launching Docker.
         self.run.side_effect = OSError('could not launch')
         self.assertEqual(prepare_dev.main(['--docker']), 1)
         self.migrate.assert_not_called()
 
     def test_interrupted_docker_startup_skips_migrations(self):
+        # Stop preparation when the user cancels startup.
         self.run.side_effect = KeyboardInterrupt
         self.assertEqual(prepare_dev.main(['--docker']), 130)
         self.migrate.assert_not_called()

@@ -1,2 +1,4 @@
+# Include the normal app libraries when installing test tools.
 -r requirements.txt
+# Send requests to the local API during automated tests.
 httpx>=0.27,<1

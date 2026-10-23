@@ -1,3 +1,4 @@
+/* Set shared fonts and colors. Custom properties keep the theme consistent. */
 :root {
   font-family: 'Segoe UI', Arial, sans-serif;
   color: #eef0e9;
@@ -11,8 +12,10 @@
   --muted: #9ba49b;
   --border: #30362f;
 }
+/* Include borders and padding in element widths and remove browser spacing. */
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
+/* Give controls the same font and clear enabled, disabled, and keyboard states. */
 button, select { font: inherit; }
 button, a, select { -webkit-tap-highlight-color: transparent; }
 button, select { cursor: pointer; }
@@ -20,10 +23,12 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: 0.45; }
 button, select, a { outline-offset: 5px; }
 :focus-visible { outline: 2px solid var(--accent); }
 button { transition: background-color 150ms ease, transform 150ms ease; }
+/* Keep links, headings, pressed buttons, and selected text consistent. */
 a { color: inherit; }
 h1, h2, h3, p { margin: 0; }
 button:not(:disabled):active { transform: translateY(1px); }
 ::selection { color: #111512; background: var(--accent); }
+/* Respect the device setting that reduces motion and animation. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

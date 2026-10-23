@@ -23,6 +23,7 @@ coverage/
 build/
 dist/
 dist-ssr/
+release/
 *.egg-info/
 
 # Local configuration and secrets; keep shareable examples

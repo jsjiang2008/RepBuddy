@@ -1,7 +1,11 @@
 {
   "name": "repbuddy",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Local push-up tracking with customizable workouts and workout history",
+  "author": "RepBuddy contributors",
+  "license": "UNLICENSED",
+  "main": "desktop/main.cjs",
   "scripts": {
     "predev": ".venv\\Scripts\\python.exe -m backend.prepare_dev",
     "dev": "npm run dev:servers",
@@ -10,9 +14,15 @@
     "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn backend.api:app --host 127.0.0.1 --port 8000",
     "dev:frontend": "npm --prefix frontend run dev",
     "db:stop": "docker compose stop db",
-    "db:migrate": ".venv\\Scripts\\python.exe -m backend.history"
+    "db:migrate": ".venv\\Scripts\\python.exe -m backend.history",
+    "desktop:prepare": "npm --prefix frontend run build && .venv\\Scripts\\python.exe desktop/build_backend.py",
+    "desktop:start": "electron .",
+    "desktop:build": "npm run desktop:prepare && electron-builder --config desktop/electron-builder.cjs --win --x64",
+    "desktop:smoke": "node desktop/smoke.cjs"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6"
+    "concurrently": "^10.0.6",
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3"
   }
 }

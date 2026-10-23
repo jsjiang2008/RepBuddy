@@ -8,11 +8,13 @@ from .history import DEFAULT_DATABASE_URL, HistoryRepository, main as migrate
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Read the optional Docker setting from the terminal command.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--docker', action='store_true', help='Start the bundled PostgreSQL Docker service.')
     args = parser.parse_args(argv)
 
     if args.docker:
+        # Only start Docker when requested and when its bundled database is selected.
         repository = HistoryRepository()
         if repository.database_url != DEFAULT_DATABASE_URL:
             print('DATABASE_URL points to another PostgreSQL server. Use npm run dev, '
@@ -24,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
                   'or use npm run dev with your PostgreSQL server.')
             return 1
         print('Starting the local workout database...', flush=True)
+        # Wait for the database container to be ready before starting the app.
         try:
             result = subprocess.run(
                 [docker, 'compose', 'up', '-d', '--wait', '--wait-timeout', '60', 'db'],
@@ -37,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         if result.returncode:
             print('Could not start PostgreSQL. Open Docker Desktop and try npm run dev:docker again.')
             return 1
+    # Normal startup connects directly to PostgreSQL and applies pending table changes.
     return migrate()
 
 

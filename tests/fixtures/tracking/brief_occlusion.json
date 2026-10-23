@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "source": {
+    "kind": "synthetic",
+    "description": "A short uncertain gap after reaching down preserves the rep.",
+    "expectedReps": 1
+  },
+  "frames": [
+    {
+      "timestamp": 0,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.1,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.2,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.3,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.4,
+      "leftAngle": 70,
+      "rightAngle": 70,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.5,
+      "leftAngle": 70,
+      "rightAngle": 70,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.6,
+      "leftAngle": 70,
+      "rightAngle": 70,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.7,
+      "leftAngle": 70,
+      "rightAngle": 70,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 0.8,
+      "leftAngle": null,
+      "rightAngle": null,
+      "inPlank": false,
+      "hasPose": false,
+      "quality": "uncertain",
+      "reason": "pose_not_found"
+    },
+    {
+      "timestamp": 0.9,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 1,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 1.1,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    },
+    {
+      "timestamp": 1.2,
+      "leftAngle": 170,
+      "rightAngle": 170,
+      "inPlank": true,
+      "hasPose": true,
+      "quality": "valid",
+      "reason": "ready"
+    }
+  ]
+}
+

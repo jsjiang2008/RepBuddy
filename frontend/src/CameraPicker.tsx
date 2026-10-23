@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { parseCameras, readResponse } from './workoutApi'
 import type { Camera } from './workoutApi'
 
+// Props are the values and callback supplied by the main workout screen.
+// The callback passes a selected camera index back to that screen.
 type Props = {
   connected: boolean
   selectedIndex: number
@@ -10,11 +12,14 @@ type Props = {
 }
 
 export function CameraPicker({ connected, selectedIndex, canChange, onChange }: Props) {
+  // State holds the device list and the messages shown while it loads.
   const [cameras, setCameras] = useState<Camera[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refresh, setRefresh] = useState(0)
 
+  // Reload after a connection change or a refresh click.
+  // Cancelling an old request stops it from replacing a newer result.
   useEffect(() => {
     const controller = new AbortController()
     void Promise.resolve().then(async () => {
@@ -34,6 +39,7 @@ export function CameraPicker({ connected, selectedIndex, canChange, onChange }: 
     return () => controller.abort()
   }, [connected, refresh])
 
+  // Explain why the menu is unavailable or why another camera must be chosen.
   const selectedAvailable = cameras.some((camera) => camera.index === selectedIndex)
   const description = !connected ? 'Connect to the tracker to choose a camera.'
     : loading ? 'Looking for cameras…'
@@ -43,6 +49,7 @@ export function CameraPicker({ connected, selectedIndex, canChange, onChange }: 
     : !selectedAvailable ? 'The selected camera is unavailable. Choose another device.'
     : 'Choose the webcam you want to use for this set.'
 
+  // Render the device menu, refresh button, and a message for screen readers.
   return (
     <div className="camera-controls">
       <div className="camera-picker-row">

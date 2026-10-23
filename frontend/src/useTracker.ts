@@ -2,21 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import { initialStatus, isStatus } from './trackerProtocol'
 import type { TrackerCommand } from './trackerProtocol'
 
+// A custom React hook keeps the live connection and workout state in one place.
 export function useTracker() {
+  // State changes cause React to update the screen.
   const [status, setStatus] = useState(initialStatus)
   const [connected, setConnected] = useState(false)
   const [pending, setPending] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  // Refs remember connection details without causing extra screen updates.
   const socketRef = useRef<WebSocket | null>(null)
   const nextRequestId = useRef(0)
   const pendingId = useRef<number | null>(null)
   const pendingSince = useRef(0)
 
+  // This effect opens the connection when the screen loads and closes it on cleanup.
   useEffect(() => {
     let disposed = false
     let retry: number | undefined
     let lastMessage = performance.now()
 
+    // WebSocket lets Python send live updates without repeated page requests.
     function connect() {
       if (disposed) return
       const url = new URL('/api/ws', window.location.href)
@@ -25,6 +30,7 @@ export function useTracker() {
       socketRef.current = socket
       lastMessage = performance.now()
 
+      // Accept only valid updates from the current connection.
       socket.onmessage = (event: MessageEvent<string>) => {
         if (disposed || socketRef.current !== socket) return
         try {
@@ -34,6 +40,7 @@ export function useTracker() {
           setStatus(data)
           setConnected(true)
           setConnectionError(null)
+          // Unlock the controls after Python confirms the matching command.
           if (pendingId.current !== null && data.ackId === pendingId.current) {
             pendingId.current = null
             setPending(false)
@@ -44,6 +51,7 @@ export function useTracker() {
         }
       }
       socket.onerror = () => socket.close()
+      // Show the tracker as stopped while waiting to reconnect.
       socket.onclose = () => {
         if (disposed || socketRef.current !== socket) return
         setConnected(false)
@@ -55,6 +63,7 @@ export function useTracker() {
     }
 
     connect()
+    // Recover if updates stop arriving or a command is never confirmed.
     const watchdog = window.setInterval(() => {
       if (performance.now() - lastMessage > 5_000) socketRef.current?.close()
       if (pendingId.current !== null && performance.now() - pendingSince.current > 8_000) {
@@ -65,6 +74,7 @@ export function useTracker() {
       }
     }, 1_000)
 
+    // Cleanup prevents old timers and connections from updating a removed screen.
     return () => {
       disposed = true
       window.clearTimeout(retry)
@@ -74,6 +84,7 @@ export function useTracker() {
     }
   }, [])
 
+  // Send one command at a time and attach a number for its acknowledgement.
   function sendCommand(command: TrackerCommand) {
     const socket = socketRef.current
     if (!connected || !socket || socket.readyState !== WebSocket.OPEN || pendingId.current !== null) return

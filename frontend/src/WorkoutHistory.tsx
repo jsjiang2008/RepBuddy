@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { mergeWorkouts, parseHistory, readResponse } from './workoutApi'
 import type { WorkoutHistory as HistoryData } from './workoutApi'
 
+// Load a small group of sets at a time to keep the history screen responsive.
 const PAGE_SIZE = 20
 
+// Show active time as minutes and seconds.
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
 export function WorkoutHistory({ connected, version }: { connected: boolean; version: number }) {
+  // State stores the visible results and separate errors for new and older pages.
   const [history, setHistory] = useState<HistoryData | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -16,8 +19,10 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
   const [moreError, setMoreError] = useState<string | null>(null)
   const [refresh, setRefresh] = useState(0)
   const [nextOffset, setNextOffset] = useState(0)
+  // A ref remembers the active request without triggering another screen update.
   const request = useRef<AbortController | null>(null)
 
+  // Refresh after reconnecting, saving a set, or clicking the refresh button.
   useEffect(() => {
     const controller = new AbortController()
     request.current?.abort()
@@ -41,12 +46,14 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
         if (!controller.signal.aborted) setLoading(false)
       }
     })
+    // Stop unfinished requests when this screen leaves or starts a new refresh.
     return () => {
       controller.abort()
       request.current?.abort()
     }
   }, [connected, version, refresh])
 
+  // Load the next page and keep the sets already shown.
   async function loadMore() {
     if (!connected || loading || loadingMore || !history) return
     const controller = new AbortController()
@@ -68,6 +75,7 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
     }
   }
 
+  // The backend total tells us whether another page is available.
   const hasMore = history !== null && nextOffset < history.total
   const summary = history?.summary
 
@@ -81,11 +89,13 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
         </button>
       </div>
 
+      {/* Keep loading and connection failures separate from an empty workout history. */}
       {!connected && <p className="history-message" role="status">Reconnect to the tracker to load your saved sets.</p>}
       {connected && loading && !history && <p className="history-message" role="status">Loading your workout history…</p>}
       {connected && error && <div className="history-message history-error" role="alert"><p>{error}</p>
         <button className="text-button" disabled={loading} onClick={() => setRefresh((value) => value + 1)}>Try again</button></div>}
 
+      {/* These totals include every saved set, even sets on pages not loaded yet. */}
       {summary && <div className="history-summary" aria-label="Workout totals">
         <div><span className="tiny-label">COMPLETED SETS</span><strong>{summary.totalSets.toLocaleString()}</strong></div>
         <div><span className="tiny-label">TOTAL REPS</span><strong>{summary.totalReps.toLocaleString()}</strong></div>
@@ -98,6 +108,7 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
         <p>Reach your rep goal and your completed set will appear here.</p>
       </div>}
 
+      {/* Show the newest sets first and convert saved dates to local time. */}
       {history && history.workouts.length > 0 && <>
         <div className="history-table-wrap">
           <table className="history-table">
@@ -110,6 +121,7 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
             </tr>)}</tbody>
           </table>
         </div>
+        {/* Older sets can be loaded without replacing the current list. */}
         <div className="history-bottom">
           <span>{history.workouts.length} of {history.total} saved sets · Local time</span>
           {hasMore && <button className="text-button" disabled={!connected || loading || loadingMore} onClick={() => { void loadMore() }}>

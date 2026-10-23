@@ -1,32 +1,33 @@
+"""Run the original standalone prototype. The current app uses the backend package."""
 import cv2
 import mediapipe as mp
 import tkinter as tk
 import numpy as np
 import time
 
-# Set up MediaPipe
+# Set up MediaPipe.
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
 pose = mp_pose.Pose()
 
-# Open webcam
+# Open webcam.
 camera = cv2.VideoCapture(0)
 landmarkIds = [11, 12, 13, 14, 15, 16, 23, 24]
-# Shoulders are 11 and 12
-# Elbows are 13 and 14
-# Wrists are 15 and 16
-# Hips are 23 and 24
+# Shoulders are 11 and 12.
+# Elbows are 13 and 14.
+# Wrists are 15 and 16.
+# Hips are 23 and 24.
 connections = [(11, 12), (23, 24), (11, 13), (13, 15), (11, 23), 
                (12, 14), (14, 16), (12, 24)]
-# Connect shoulders (11, 12)
-# Connect hips (23, 24)
-# Connect left shoulder to left elbow (11, 13)
-# Connect left elbow to left wrist (13, 15)
-# Connect left shoulder to left hip (11, 23)
-# Connect right shoulder to right elbow (12, 14)
-# Connect right elbow to right wrist (14, 16)
-# Connect right shoulder to right hip (12, 24)
+# Join the two shoulder points.
+# Join the two hip points.
+# Join the left shoulder to the left elbow.
+# Join the left elbow to the left wrist.
+# Join the left shoulder to the left hip.
+# Join the right shoulder to the right elbow.
+# Join the right elbow to the right wrist.
+# Join the right shoulder to the right hip.
 
 counter = 0
 stage = None
@@ -37,27 +38,27 @@ MAX_BODY_TILT = 30
 MAX_FRONT_ANGLE = 35
 PLANK_GRACE_SECONDS = 0.5
 
-# Calculate angle between 3 points a, b, and c
+# Calculate angle between 3 points a, b, and c.
 def calculateAngle(a, b, c) :
-    # Convert to numpy array objects
+    # Convert to numpy array objects.
     a = np.array(a)
     b = np.array(b)
     c = np.array(c)
 
-    # Create two vectors
+    # Find the direction from the elbow toward each end of the arm.
     ba = a - b
     bc = c - b
     
-    # Calculate cosine of the angle using the dot product formula
+    # Calculate cosine of the angle using the dot product formula.
     magnitude = np.linalg.norm(ba) * np.linalg.norm(bc)
     if magnitude == 0:
         return np.nan
     cosAngle = np.dot(ba, bc) / magnitude
     
-    # Clip values to the valid range [-1.0, 1.0] to avoid floating point errors
+    # Keep the cosine between negative one and one to avoid rounding errors.
     cosAngle = np.clip(cosAngle, -1.0, 1.0)
     
-    # Calculate angle in radians and convert to degrees
+    # Calculate angle in radians and convert to degrees.
     radians = np.arccos(cosAngle)
     return np.degrees(radians)
 
@@ -70,7 +71,7 @@ def posePoint(worldLandmarks, index):
 
 
 def isInPlank(landmarks, worldLandmarks):
-    # Front-facing torso check: knees and ankles can be completely hidden.
+    # Check the torso while facing the camera. Knees and ankles may be hidden.
     # This estimates plank posture but cannot verify straight legs.
     if worldLandmarks is None:
         return False
@@ -91,8 +92,8 @@ def isInPlank(landmarks, worldLandmarks):
     if torsoLength == 0 or np.linalg.norm(shoulderLine) == 0:
         return False
 
-    # With a level camera, a plank torso is roughly horizontal and extends
-    # away from the lens (+z). Sideways and upright poses must not count.
+    # With a level camera, a plank torso is roughly horizontal and extends.
+    # away from the lens. Sideways and upright poses must not count.
     bodyTilt = np.degrees(np.arctan2(abs(torso[1]),
                                     np.linalg.norm(torso[[0, 2]])))
     facingAngle = np.degrees(np.arctan2(abs(torso[0]), torso[2]))
@@ -116,7 +117,7 @@ def updatePushUpStage(stage, leftAngle, rightAngle, inPlank, invalidSince, now):
             return None, 0, None
         if invalidSince is None:
             invalidSince = now
-        # Preserve progress during a brief dropout, but never count or
+        # Preserve progress during a brief dropout, but never count or.
         # change stages using an invalid frame.
         return stage, 0, invalidSince
 
@@ -126,7 +127,7 @@ def updatePushUpStage(stage, leftAngle, rightAngle, inPlank, invalidSince, now):
         return "down", 0, None
     return stage, 0, None
 
-# Set up window
+# Set up window.
 cv2.namedWindow("Push-Up Tracker", cv2.WINDOW_NORMAL)
 cv2.setWindowProperty(
     "Push-Up Tracker",
@@ -134,13 +135,13 @@ cv2.setWindowProperty(
     cv2.WINDOW_FULLSCREEN
 )
 
-# Initialize a tkinter root window
+# Initialize a tkinter root window.
 root = tk.Tk()
 
-# Withdraw the window so it doesn't appear on the screen
+# Hide the helper window used to measure the screen.
 root.withdraw()
 
-# Get screen width and height in pixels
+# Get screen width and height in pixels.
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
 
@@ -155,53 +156,53 @@ while camera.isOpened():
         print("Could not read camera")
         break
 
-    # OpenCV uses BGR
-    # MediaPipe expects RGB
+    # OpenCV uses BGR.
+    # MediaPipe expects RGB.
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    # Detect body
+    # Detect body.
     results = pose.process(rgb_frame)
 
-    # Original camera dimensions
+    # Original camera dimensions.
     frameHeight, frameWidth = frame.shape[:2]
     inPlank = False
     angleLeftElbow = angleRightElbow = np.nan
 
-    # Draw body landmarks and lines
+    # Draw body landmarks and lines.
     if results.pose_landmarks:
         h, w, c = frame.shape
         drawnLandmarks = {}
         
-        # Loop through only the specific IDs you want
+        # Loop through only the specific IDs you want.
         for lmId in landmarkIds:
-            # Get the landmark by its ID
+            # Get the landmark by its ID.
             landmark = results.pose_landmarks.landmark[lmId]
 
             if landmark.visibility > 0.5:
-                # Convert normalized coordinates (0.0 to 1.0) to pixel coordinates
+                # Convert positions from fractions of the image into pixel positions.
                 cx, cy = int(landmark.x * w), int(landmark.y * h)
 
-                # Add to drawn landmarks
+                # Add to drawn landmarks.
                 drawnLandmarks[lmId] = (cx, cy)
                 
-                # Draw the specific landmark using OpenCV
+                # Draw the specific landmark using OpenCV.
                 cv2.circle(frame, (cx, cy), 8, (0, 255, 0), cv2.FILLED)   
 
-        # Drawn lines
+        # Draw lines between visible joints to show the tracked body.
         for start, end in connections:
             if start in drawnLandmarks and end in drawnLandmarks:
                 cv2.line(frame, drawnLandmarks[start], drawnLandmarks[end], (255, 0, 0), 3)
 
-        # Get the landmarks for further processing if needed
+        # Get the landmarks for further processing if needed.
         landmarks = results.pose_landmarks.landmark
         worldLandmarks = (results.pose_world_landmarks.landmark
                           if results.pose_world_landmarks else None)
 
-        # Image coordinates position the elbow-angle labels on the frame.
+        # Use image positions to place the elbow angle labels beside the joints.
         leftElbow = [int(landmarks[13].x * frameWidth), int(landmarks[13].y * frameHeight)]
         rightElbow = [int(landmarks[14].x * frameWidth), int(landmarks[14].y * frameHeight)]
 
-        # Depth matters when facing the camera: projected 2D elbow angles
+        # Depth matters when facing the camera. Flat image angles
         # can look straight even when the arms are bent toward the camera.
         angleLeftElbow = calculateAngle(*[
             posePoint(worldLandmarks, index)
@@ -212,7 +213,7 @@ while camera.isOpened():
             for index in [12, 14, 16]
         ])
 
-        # Visualize the angles on the frame
+        # Visualize the angles on the frame.
         cv2.putText(frame, str(int(angleLeftElbow)) if np.isfinite(angleLeftElbow) else "?",
                     tuple(leftElbow), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
@@ -222,7 +223,7 @@ while camera.isOpened():
 
         inPlank = isInPlank(landmarks, worldLandmarks)
 
-    # Apply the same grace period to bad posture, missing joints and a
+    # Apply the same grace period to bad posture, missing joints and a.
     # completely missing pose. Monotonic time makes it independent of FPS.
     stage, completedRep, invalidSince = updatePushUpStage(
         stage, angleLeftElbow, angleRightElbow, inPlank,
@@ -242,7 +243,7 @@ while camera.isOpened():
         
         
 
-    # Calculate scale while preserving aspect ratio
+    # Calculate scale while preserving aspect ratio.
     scale = min(
         screen_width / frameWidth,
         screen_height / frameHeight
@@ -251,13 +252,13 @@ while camera.isOpened():
     new_width = int(frameWidth * scale)
     new_height = int(frameHeight * scale)
 
-    # Resize without stretching
+    # Resize without stretching.
     resized_frame = cv2.resize(
         frame,
         (new_width, new_height)
     )
 
-    # Create black fullscreen background
+    # Create black fullscreen background.
     fullscreen = cv2.copyMakeBorder(
         resized_frame,
         (screen_height - new_height) // 2,
@@ -268,12 +269,12 @@ while camera.isOpened():
         value=(0, 0, 0)
     )
 
-    # Display the push-up counter
+    # Display the number of completed push ups.
     cv2.putText(fullscreen, f'Push-Ups: {counter}', (50, 100), 
                 cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
 
 
-    # Display the frame
+    # Display the frame.
     cv2.imshow("Push-Up Tracker", fullscreen)
     
     if cv2.waitKey(1) & 0xFF == ord('q'):

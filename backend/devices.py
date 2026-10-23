@@ -3,6 +3,7 @@ import sys
 
 
 def camera_backend():
+    # Select the camera driver used by the current operating system.
     import cv2
 
     if sys.platform == 'win32':
@@ -13,7 +14,7 @@ def camera_backend():
 
 
 def list_video_devices():
-    # This enumerates OS device metadata; it does not acquire a camera stream.
+    # Ask the operating system for camera names without opening their video streams.
     from cv2_enumerate_cameras import enumerate_cameras
 
     return [{'index': camera.index, 'name': camera.name}
@@ -21,6 +22,7 @@ def list_video_devices():
 
 
 def open_video_capture(index):
+    # Open the camera selected by its device number.
     import cv2
 
     # Use the same backend as enumeration so names map to the correct index.

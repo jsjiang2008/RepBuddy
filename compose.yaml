@@ -1,17 +1,22 @@
+# Group the optional database container and its storage under this project.
 name: repbuddy
 
 services:
   db:
+    # Use PostgreSQL version eighteen with local development credentials.
     image: postgres:18
     environment:
       POSTGRES_DB: repbuddy
       POSTGRES_USER: repbuddy
       POSTGRES_PASSWORD: repbuddy_local
     ports:
+      # Make this database available only on this computer.
       - "127.0.0.1:5433:5432"
     volumes:
+      # Keep workout history when the container stops or is recreated.
       - postgres_data:/var/lib/postgresql
     healthcheck:
+      # Wait until PostgreSQL accepts connections before starting the app.
       test: ["CMD-SHELL", "pg_isready -U repbuddy -d repbuddy"]
       interval: 2s
       timeout: 5s
@@ -19,4 +24,5 @@ services:
       start_period: 5s
 
 volumes:
+  # Docker manages this storage separately from the project files.
   postgres_data:
