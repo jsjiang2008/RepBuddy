@@ -184,7 +184,6 @@ on port 8000. Camera frames are processed locally and aren't stored.
 | `frontend/src/CameraPicker.tsx` | Webcam selection |
 | `frontend/src/WorkoutHistory.tsx` | Saved sets and workout totals |
 | `frontend/src/trackingFeedback.ts` | Plain language tracking and calibration guidance |
-| `main.py` | Original standalone prototype, separate from the current app |
 
 ## Development
 
@@ -239,7 +238,8 @@ npm run dev
 
 This checks the database, applies migrations, and starts Python and React
 together. Open [localhost:5173](http://127.0.0.1:5173). You don't need to activate
-the virtual environment or run `main.py`.
+the virtual environment. The desktop entry point is `desktop/main.cjs`, and
+browser development starts Python through `backend/api.py`.
 
 Press **Ctrl+C** to stop both servers. PostgreSQL keeps running as a Windows
 service, and saved sets stay in the database. If one server exits, the other

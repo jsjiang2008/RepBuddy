@@ -56,7 +56,7 @@ function App() {
     : restPaused ? 'Rest paused'
     : workoutComplete ? 'Workout complete'
     : feedback.phase
-  const guidance = !connected ? 'Start the Python tracker. This screen reconnects automatically.'
+  const guidance = !connected ? 'Waiting for the tracker. This screen reconnects automatically.'
     : error || (countingDown ? 'Get into position. Counting begins when the countdown ends.'
     : calibrating ? calibrationMessage
     : resting ? (savePending && session.restRemainingSeconds === 0 ? 'Waiting for this set to save before continuing.' : `Set ${session.currentSet} complete. Set ${session.currentSet + 1} starts after rest and a five-second countdown.`)

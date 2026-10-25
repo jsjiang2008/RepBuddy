@@ -69,6 +69,10 @@ After `desktop:prepare`, `desktop:start` opens the Electron shell from source
 using the packaged backend resources. Run `desktop:prepare` again after changing
 Python or frontend code. `npm run dev` remains available for browser development.
 
+Each prepare step collects a fresh set of resources before replacing the previous
+ones. Files removed from the source or dependencies won't linger in later builds.
+Close any app started with `desktop:start` before preparing it again.
+
 The build includes only program files, models, migrations, frontend assets,
 and dependency notices. It does not include `.env`, database files, backups,
 or the project's virtual environment. Bump the root package version before

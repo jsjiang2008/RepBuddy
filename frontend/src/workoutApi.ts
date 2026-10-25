@@ -29,9 +29,12 @@ export function parseCameras(value: unknown): CameraList {
 
 // Check dates, totals, and durations before displaying saved sets.
 export function parseHistory(value: unknown): WorkoutHistory {
-  if (!isRecord(value) || !isCount(value.total) || !isRecord(value.summary)
-    || !['totalSets', 'totalReps', 'weekReps', 'bestSet'].every((key) => isCount(value.summary && (value.summary as Record<string, unknown>)[key]))
-    || !Array.isArray(value.workouts) || !value.workouts.every((workout: unknown) =>
+  if (!isRecord(value) || !isCount(value.total) || !isRecord(value.summary) || !Array.isArray(value.workouts)) {
+    throw new Error('Your workout history could not be read. Try refreshing it.')
+  }
+  const { summary, workouts } = value
+  if (!['totalSets', 'totalReps', 'weekReps', 'bestSet'].every((key) => isCount(summary[key]))
+    || !workouts.every((workout: unknown) =>
       isRecord(workout) && typeof workout.id === 'string' && workout.id.length > 0
       && typeof workout.completedAt === 'string' && Number.isFinite(Date.parse(workout.completedAt))
       && isCount(workout.reps) && isCount(workout.goal) && workout.goal > 0

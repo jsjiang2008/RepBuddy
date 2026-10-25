@@ -4,7 +4,7 @@ import math
 import unittest
 from types import SimpleNamespace
 
-from backend.tracker import PushUpTracker, assessPlank, calculateAngle, isInPlank, posePoint
+from backend.tracker import PushUpTracker, assess_plank, calculate_angle, pose_point
 
 
 def front_plank():
@@ -275,8 +275,7 @@ class PlankGeometryTests(unittest.TestCase):
     def test_front_plank_needs_no_knees_or_ankles(self):
         # Visible torso and arms are enough for a valid front facing plank.
         image, world = front_plank()
-        self.assertTrue(isInPlank(image, world))
-        self.assertEqual(assessPlank(image, world).quality, 'valid')
+        self.assertEqual(assess_plank(image, world).quality, 'valid')
 
     def test_hidden_required_joints_get_specific_reasons(self):
         # Feedback names the body area that needs to stay in view.
@@ -285,47 +284,47 @@ class PlankGeometryTests(unittest.TestCase):
             with self.subTest(index=index):
                 image, world = front_plank()
                 image[index].visibility = 0.49
-                result = assessPlank(image, world)
+                result = assess_plank(image, world)
                 self.assertEqual((result.quality, result.reason), ('uncertain', reason))
 
     def test_missing_and_broken_coordinates_are_uncertain(self):
         # Absent body points and invalid coordinates produce recoverable uncertainty.
         image, world = front_plank()
-        self.assertEqual(assessPlank(None, None).reason, 'no_pose')
-        self.assertEqual(assessPlank(image, None).reason, 'world_landmarks_missing')
-        self.assertEqual(assessPlank(image[:20], world).reason, 'hips_not_visible')
+        self.assertEqual(assess_plank(None, None).reason, 'no_pose')
+        self.assertEqual(assess_plank(image, None).reason, 'world_landmarks_missing')
+        self.assertEqual(assess_plank(image[:20], world).reason, 'hips_not_visible')
         image[15].x = 1.1
-        self.assertEqual(assessPlank(image, world).reason, 'wrists_not_visible')
+        self.assertEqual(assess_plank(image, world).reason, 'wrists_not_visible')
         image[15].x = float('nan')
-        self.assertEqual(assessPlank(image, world).reason, 'invalid_landmarks')
+        self.assertEqual(assess_plank(image, world).reason, 'invalid_landmarks')
         image, world = front_plank()
         world[11].z = float('inf')
-        self.assertEqual(assessPlank(image, world).reason, 'invalid_landmarks')
+        self.assertEqual(assess_plank(image, world).reason, 'invalid_landmarks')
 
     def test_upright_sideways_and_raised_hands_have_distinct_reasons(self):
         # Clear geometry mistakes should immediately invalidate a movement.
         image, world = front_plank()
         for index in (23, 24):
             world[index].y = 1
-        self.assertEqual(assessPlank(image, world).reason, 'torso_too_upright')
+        self.assertEqual(assess_plank(image, world).reason, 'torso_too_upright')
         image, world = front_plank()
         for point in world:
             point.x, point.z = point.z, -point.x
-        self.assertEqual(assessPlank(image, world).reason, 'face_camera')
+        self.assertEqual(assess_plank(image, world).reason, 'face_camera')
         image, world = front_plank()
         world[15].y = 0
-        self.assertEqual(assessPlank(image, world).reason, 'hands_not_below_shoulders')
+        self.assertEqual(assess_plank(image, world).reason, 'hands_not_below_shoulders')
 
     def test_boundary_tilt_is_uncertain_instead_of_definitely_wrong(self):
         # A small tolerance prevents noisy boundary readings from resetting a rep.
         image, world = front_plank()
         for index in (23, 24):
             world[index].y = math.tan(math.radians(34)) * 0.5
-        result = assessPlank(image, world)
+        result = assess_plank(image, world)
         self.assertEqual((result.quality, result.reason), ('uncertain', 'borderline_posture'))
 
     def test_angle_math_rejects_collapsed_or_missing_points(self):
         # Impossible arm segments return a missing angle rather than a false endpoint.
-        self.assertEqual(calculateAngle([0, 0, 0], [0, 1, 0], [0, 2, 0]), 180)
-        self.assertTrue(math.isnan(calculateAngle([0, 0, 0], [0, 0, 0], [1, 1, 1])))
-        self.assertTrue(math.isnan(calculateAngle(posePoint(None, 11), [0, 0, 0], [1, 1, 1])))
+        self.assertEqual(calculate_angle([0, 0, 0], [0, 1, 0], [0, 2, 0]), 180)
+        self.assertTrue(math.isnan(calculate_angle([0, 0, 0], [0, 0, 0], [1, 1, 1])))
+        self.assertTrue(math.isnan(calculate_angle(pose_point(None, 11), [0, 0, 0], [1, 1, 1])))

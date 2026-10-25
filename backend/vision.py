@@ -8,7 +8,7 @@ from mediapipe.python.solutions.pose import Pose
 import numpy as np
 from numpy.typing import NDArray
 
-from .tracker import MIN_VISIBILITY, PoseAssessment, assessPlank, calculateAngle, posePoint
+from .tracker import MIN_VISIBILITY, PoseAssessment, assess_plank, measure_elbow_angles
 
 # Only the torso and arms are needed. Hidden legs do not block tracking.
 LANDMARK_IDS = (11, 12, 13, 14, 15, 16, 23, 24)
@@ -60,7 +60,7 @@ class PoseProcessor:
         # Keep the latest model output available for local replay and debugging.
         self.last_landmarks = landmarks
         self.last_world_landmarks = world
-        self.assessment = assessPlank(landmarks, world)
+        self.assessment = assess_plank(landmarks, world)
         if landmarks is not None:
             # Draw only clear points inside the image and the lines joining them.
             height, width = frame.shape[:2]
@@ -78,8 +78,7 @@ class PoseProcessor:
                 if start in points and end in points:
                     cv2.line(frame, points[start], points[end], (126, 241, 193), 2)
             # Spatial points measure each elbow bend even when the body faces the camera.
-            left_angle = float(calculateAngle(*[posePoint(world, i) for i in (11, 13, 15)]))
-            right_angle = float(calculateAngle(*[posePoint(world, i) for i in (12, 14, 16)]))
+            left_angle, right_angle = measure_elbow_angles(world)
             if self.assessment.quality == 'valid' and not np.isfinite([left_angle, right_angle]).all():
                 self.assessment = PoseAssessment('uncertain', 'invalid_landmarks')
             # Angle labels make the detected movement visible in the preview.

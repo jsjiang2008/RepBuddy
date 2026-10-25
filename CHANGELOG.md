@@ -3,6 +3,18 @@
 Updates to RepBuddy, with the newest changes first. Future tasks are listed at
 the bottom. Dates for earlier updates come from the Git history.
 
+## 2026-10-25 — Cleaning up files and optimizations
+
+- Removed the unused standalone prototype, starter images, and old IDE project
+  files. The README now points to the current desktop and backend entry points.
+- Shared the elbow angle calculations between live tracking and replay, and
+  renamed the geometry helpers to follow Python naming conventions.
+- Reduced repeated history rendering during live updates and reused its date
+  formatter. Simplified the history response checks.
+- Changed desktop builds to collect fresh resources before replacing the old
+  build, so deleted files don't remain in later packages. Added checks for stale
+  files, failed collection, and invalid output paths.
+
 ## 2026-10-23 — Windows desktop installer
 
 - Added an Electron desktop shell and Windows installer with the Python tracker,
@@ -148,5 +160,5 @@ Suggested order for the next updates. Completed tasks are checked off below.
 - [ ] **Add a project demo.** Include screenshots, a short video of a full
   workout, and an architecture diagram in the README. Add measured tracking
   results and describe the test setup so the numbers have context.
-- [ ] **Clean up the old prototype.** Decide whether to keep or remove
-  `main.py`, and make the main app's entry points clear.
+- [x] **Clean up the old prototype.** Removed `main.py` and documented the
+  current desktop and development entry points.

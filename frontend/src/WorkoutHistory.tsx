@@ -1,16 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { mergeWorkouts, parseHistory, readResponse } from './workoutApi'
 import type { WorkoutHistory as HistoryData } from './workoutApi'
 
 // Load a small group of sets at a time to keep the history screen responsive.
 const PAGE_SIZE = 20
 
+// Reuse the date formatter when drawing each saved set.
+const completedDate = new Intl.DateTimeFormat(undefined, {
+  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+})
+
 // Show active time as minutes and seconds.
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
-export function WorkoutHistory({ connected, version }: { connected: boolean; version: number }) {
+// Live pose updates do not need to redraw an unchanged history panel.
+export const WorkoutHistory = memo(function WorkoutHistory({ connected, version }: { connected: boolean; version: number }) {
   // State stores the visible results and separate errors for new and older pages.
   const [history, setHistory] = useState<HistoryData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -115,7 +121,7 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
             <caption className="sr-only">Completed push-up sets, newest first. Dates are shown in your local time.</caption>
             <thead><tr><th scope="col">Completed</th><th scope="col">Exercise</th><th scope="col">Reps</th><th scope="col">Active time</th></tr></thead>
             <tbody>{history.workouts.map((workout) => <tr key={workout.id}>
-              <td><time dateTime={workout.completedAt}>{new Date(workout.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</time></td>
+              <td><time dateTime={workout.completedAt}>{completedDate.format(new Date(workout.completedAt))}</time></td>
               <td>Push-ups</td><td><strong>{workout.reps}</strong><span className="history-goal"> / {workout.goal}</span></td>
               <td className="duration-cell">{formatDuration(workout.durationSeconds)}</td>
             </tr>)}</tbody>
@@ -132,4 +138,4 @@ export function WorkoutHistory({ connected, version }: { connected: boolean; ver
       </>}
     </section>
   )
-}
+})

@@ -25,7 +25,7 @@ class PoseAssessment:
     reason: str | None = None
 
 
-def calculateAngle(a, b, c):
+def calculate_angle(a, b, c):
     """Measure the bend at the middle point and reject unusable points."""
     a, b, c = (np.asarray(point, dtype=float) for point in (a, b, c))
     if not np.isfinite([a, b, c]).all():
@@ -37,16 +37,16 @@ def calculateAngle(a, b, c):
     return float(np.degrees(np.arccos(np.clip(np.dot(ba, bc) / magnitude, -1, 1))))
 
 
-def posePoint(worldLandmarks, index):
+def pose_point(world_landmarks, index):
     """Read one body point in space and return missing values when unavailable."""
     try:
-        point = worldLandmarks[index]
+        point = world_landmarks[index]
         return np.asarray([point.x, point.y, point.z], dtype=float)
     except (IndexError, KeyError, TypeError, AttributeError, ValueError):
         return np.full(3, np.nan)
 
 
-def assessPlank(landmarks, worldLandmarks) -> PoseAssessment:
+def assess_plank(landmarks, world_landmarks) -> PoseAssessment:
     """Check the torso and arms even when knees and ankles are hidden.
 
     Uncertain measurements suspend counting. Clearly wrong posture invalidates
@@ -55,7 +55,7 @@ def assessPlank(landmarks, worldLandmarks) -> PoseAssessment:
     """
     if landmarks is None:
         return PoseAssessment('uncertain', 'no_pose')
-    if worldLandmarks is None:
+    if world_landmarks is None:
         return PoseAssessment('uncertain', 'world_landmarks_missing')
     # All required joints must be clear and inside the camera image.
     groups = (
@@ -74,7 +74,7 @@ def assessPlank(landmarks, worldLandmarks) -> PoseAssessment:
                 return PoseAssessment('uncertain', 'invalid_landmarks')
             if point.visibility < MIN_VISIBILITY or not (0 <= point.x <= 1 and 0 <= point.y <= 1):
                 return PoseAssessment('uncertain', f'{name}_not_visible')
-            points[index] = posePoint(worldLandmarks, index)
+            points[index] = pose_point(world_landmarks, index)
     if not np.isfinite(list(points.values())).all():
         return PoseAssessment('uncertain', 'invalid_landmarks')
     # Compare the shoulders and hips to estimate body direction and tilt.
@@ -104,9 +104,11 @@ def assessPlank(landmarks, worldLandmarks) -> PoseAssessment:
     return PoseAssessment('valid')
 
 
-def isInPlank(landmarks, worldLandmarks):
-    """Keep the simple yes or no check available to older callers."""
-    return assessPlank(landmarks, worldLandmarks).quality == 'valid'
+def measure_elbow_angles(world_landmarks) -> tuple[float, float]:
+    """Use the same elbow measurements for live tracking and recorded replays."""
+    left = calculate_angle(*(pose_point(world_landmarks, index) for index in (11, 13, 15)))
+    right = calculate_angle(*(pose_point(world_landmarks, index) for index in (12, 14, 16)))
+    return left, right
 
 
 def _finite_angle(value):

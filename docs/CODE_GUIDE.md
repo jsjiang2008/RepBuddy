@@ -1,8 +1,10 @@
 Reading the project settings.
 
 The package files list the commands and libraries used by the app. The root
-package starts Python and React together. The frontend package builds and
-checks the browser interface. Lock files record the exact library versions
+package starts Python and React together for development and builds the desktop
+installer. Electron starts the packaged Python program when the desktop app
+opens. The frontend package builds and checks the browser interface.
+Lock files record the exact library versions
 installed by npm. These files use JSON, which does not allow comments.
 
 The TypeScript settings check types and control how the frontend code is

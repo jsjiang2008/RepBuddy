@@ -10,7 +10,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
-from .tracker import PushUpTracker, assessPlank, calculateAngle, posePoint
+from .tracker import PushUpTracker, assess_plank, measure_elbow_angles
 
 TRACE_VERSION = 1
 QUALITIES = {'valid', 'uncertain', 'invalid'}
@@ -219,9 +219,8 @@ def _measure_frame(frame: dict[str, Any]) -> dict[str, Any]:
     # Convert saved points to the same attribute shape used by the live tracker.
     image = [SimpleNamespace(**({'visibility': 0.0} | point)) for point in image_points] if image_points is not None else None
     world = [SimpleNamespace(**point) for point in world_points] if world_points is not None else None
-    assessment = assessPlank(image, world)
-    left = float(calculateAngle(*[posePoint(world, index) for index in (11, 13, 15)]))
-    right = float(calculateAngle(*[posePoint(world, index) for index in (12, 14, 16)]))
+    assessment = assess_plank(image, world)
+    left, right = measure_elbow_angles(world)
     return frame | {
         'leftAngle': left if math.isfinite(left) else None,
         'rightAngle': right if math.isfinite(right) else None,
